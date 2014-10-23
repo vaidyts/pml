@@ -1,0 +1,108 @@
+---
+title: "Modeling and Prediction using Weight Lifting dataset"
+output: html_document
+---
+
+### Executive Summary
+
+Under the category of Human Activity Recognition (HAR) is a dataset called Weight Lifting Exercise (WLE). This dataset contains data generated during weight lifting performed by 6 participants, who were asked to lift the weights using different techniques with various sensors attached to their body, the sensor data being the predictors and the weight lifting technique being the response variable. We are given a training and test dataset. The objective of this project is to develop a model based on the provided training data and give the output of the test samples.
+
+The main steps in the above exercise involved reading the data, looking at the summary statistics, selecting the variables for modeling, partitioning the given samples into train and test subsets, model development using the training data, testing the model on the test subset, error estimation, and finally prediction of the response for the sample set provided. Different models were tried out and in the end, the best model turned out to be a random Forest model which outperformed by far the other techniques. The model was able to obtain a near perfect classification of the training and test data, and a perfect classification of the assignment data. Details are given below:
+
+### Data input, exploratory analysis, and variable selection for modeling
+The given data contains 19622 rows (observations) and 160 columns (variables). This is split into a 75/25 partition for training and testing purposes respectively. On the training subset, summary statistics of each of the variables is collected. It is seen that 96 of the 160 variables have close to 98% (19216/19620) "NA" or "blank" entries. It is decided to remove these variables from the training. 4 other variables related to serial number and timestamp are also removed from the dataset. This pruning results in a reduced dataset containing 56 variables. 
+
+```{r,include=FALSE}
+library(caret); library(tree); library(randomForest); library(rpart)
+```
+Reading the data
+```{r}
+train_given <- read.csv("pml-training.csv")
+test_given <- read.csv("pml-testing.csv")
+indexTrain <- createDataPartition(y=train_given$classe,p=0.75,list=FALSE)
+train <- train_given[indexTrain,]
+test <- train_given[-indexTrain,]
+```
+Calculation of summary statistics of the variables
+```{r, eval=FALSE}
+fn <- "summary.txt"
+raw <- train_given
+for (i in 1:ncol(raw)) { 
+  x <- names(raw)[i]
+  write(x, file=fn, append=TRUE, sep="\t",ncolumns = 7)
+  x <- names(summary(raw[,i], maxsum=7))
+  write(x,file=fn, append=TRUE, sep="\t", ncolumns = 7)
+  x <- summary(raw[,i], maxsum=7)
+  write(x,file=fn, append=TRUE, sep="\t", ncolumns = 7)
+  write("\n", file=fn, append=TRUE)
+}
+```
+Variable selection for modeling
+```{r}
+varindex <- c(2, 6:11, 37:49, 60:68, 84:86, 102, 113:124, 140, 151:159)
+train_x <- train[,varindex]
+train_y <- train[,160]
+train_xy <- data.frame(train_x,classe=train_y)
+test_x <- test[,varindex]
+test_y <- test[,160]
+validate <- test_given[,varindex]
+```
+### Model development 
+In this section, different models are attempted
+
+### Model=rpart
+The first model tried is rpart which stands for recursive partitioning. The model is run with default options. The resulting accuracy is ~ 0.6 (60%) on the training subset. Attempts are made to improve this further with the help of other options such as center, scale, pca, cv, etc. Unfortunately no significant improvement is seen and the overall accuracy obtained is ~ 60%
+```{r}
+fit_rpart_1 <- train(classe~., method="rpart", data=train_xy)
+fit_rpart_1
+```
+
+```{r, eval=FALSE}
+fit_rpart_2 <- train(classe~., method="rpart", data=train_xy,
+                     preProcess=c("center","scale"))
+fit_rpart_3 <- train(classe~., method="rpart", data=train_xy,
+                     preProcess=c("center","scale","pca"))
+fit_rpart_4 <- train(classe~., method="rpart", data=train_xy,
+                     preProcess=c("center","scale","pca"),trControl=trainControl(method="cv"))
+```
+
+### Model=tree
+In this section, tree based algorithms are used. With the default options we get a misclassification 
+rate of 0.22 (22%) which implies an accuracy rate of 0.78 (78%). This is definitely an improvement over the previous section. Changing the control parameters does not result in a significant improvement.
+```{r}
+fit_tree_1 <- tree(classe~.,data=train_xy)
+summary(fit_tree_1)
+```
+
+### Model=randomForest
+Here the random forest approach is attempted. With default parameters, the misclassification rate is only 0.26%. It is attempted to improve the models further by changing the control parameters such as ```importance```,```proximity```, ```mtry```, etc. Best results are obtained with ```mtry``` of 11
+```{r, eval=FALSE}
+fit_rf_1 <- randomForest(x=train_x,y=train_y,xtest=test_x,ytest=test_y)
+fit_rf_2 <- randomForest(x=train_x,y=train_y,xtest=test_x,ytest=test_y,importance=TRUE)
+fit_rf_3 <- randomForest(x=train_x,y=train_y,xtest=test_x,ytest=test_y,proximity=TRUE)
+fit_rf_4 <- randomForest(x=train_x,y=train_y,xtest=test_x,ytest=test_y,mtry=10)
+fit_rf_5 <- randomForest(x=train_x,y=train_y,xtest=test_x,ytest=test_y,mtry=11)
+fit_rf_6 <- randomForest(x=train_x,y=train_y,xtest=test_x,ytest=test_y,mtry=12)
+```
+Below are the details of the best achieved fit using Random Forest technique and the confusion matrices on the train, test and validation data subsets. We can see from the confusion matrices that the random forest algorithm does extremely well on all of them. Finally we also obtain the outputs predicted for the validation dataset. This concludes the modeling exercise. 
+```{r,echo=FALSE}
+fit_rf_5 <- randomForest(x=train_x,y=train_y,xtest=test_x,ytest=test_y,mtry=11)
+fit_rf_5
+fit_rf_7 <- randomForest(x=train_x,y=train_y,xtest=validate,mtry=11)
+fit_rf_7
+fit_rf_7$test["predicted"]
+```
+
+### Importance measures
+It is also important to get an idea of the relative importance of the variables. From the Gini measure we can get a good idea of the variables that are important. The following table and plots provide this information.
+```{r,echo=FALSE}
+tmp <- fit_rf_5$importance
+tmp2 <- tmp[order(-tmp),,drop=FALSE]
+tmp3 <- data.frame(tmp2,ratio=tmp2/sum(tmp2),cumratio=cumsum(tmp2)/sum(tmp2))
+tmp3[1:10,]
+par(las=2); barplot(tmp3$MeanDecreaseGini.1,names.arg=row.names(tmp3),cex.names=0.7,main="Variable importance - fractional",ylab="Gini importance score as a fraction of total score")
+par(las=2); barplot(tmp3$cumratio,names.arg=row.names(tmp3),cex.names=0.7, main="variable importance - cumulative",ylab="Cumulative Gin importance score")
+```
+
+### Summary / Conclusion
+In summary, we have developed a model of the WLE dataset by looking at different models and selecting the random Forest model, trained and tested it, and successfully used it for prediction of new observations with excellent accuracy.
